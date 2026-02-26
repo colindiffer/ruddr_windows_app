@@ -1,37 +1,143 @@
-# Ruddr Time Tracker - Windows App
+# Ruddr Time Tracker — Windows App
 
-This is a native Windows desktop application converted from the Ruddr Chrome Extension.
+A native Windows desktop app for logging time in Ruddr, built with Electron. Lives in the system tray, works like the Chrome extension but as a standalone app — no browser needed.
 
-The extention can be founf at C:\Users\ColinDiffer\app\ruddrextention
+---
 
-## Architecture
-- **Framework**: Electron
-- **Main Process (`src/main/main.js`)**: Handles window management, native system integration, and IPC communication.
-- **Preload (`src/main/preload.js`)**: A secure bridge that shims Chrome Extension APIs (`chrome.storage`, `chrome.cookies`, `chrome.tabs`, etc.) so the original extension code works without modification.
-- **Renderer (`src/renderer/`)**: The original extension UI (HTML/CSS/JS).
+## Features
 
-## Setup & Development
+- System tray icon — click to show/hide, right-click for menu
+- Log time, edit entries, run timers
+- Auto-hides when you click away (like the Chrome extension popup)
+- Launches at Windows startup automatically
+- Auto-updates silently in the background
 
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
+---
 
-2. **Run in Development**:
-   ```bash
-   npm start
-   ```
-   *Note: DevTools will open automatically in development mode to help with debugging.*
+## Installing (for users)
 
-## Building the App
+Download the latest installer from:
 
-To create a standalone Windows installer (`.exe`):
+**https://github.com/colindiffer/ruddr_windows_app/releases/latest**
+
+> **Windows SmartScreen warning:** Because the app isn't code-signed, Windows will show
+> "Windows protected your PC" on first install. Click **More info → Run anyway** to proceed.
+> This is normal for internal unsigned apps.
+
+After installing:
+1. The Ruddr icon will appear in your system tray
+2. Click it and enter your Ruddr email address
+3. Click **Login at Ruddr** — a browser window will open
+4. Log in to Ruddr — the window closes automatically and you're in
+
+---
+
+## First-time login
+
+1. Click the tray icon to open the app
+2. Enter your **Ruddr email address**
+3. Click **Login at Ruddr**
+4. Log in to Ruddr in the window that opens
+5. The login window closes and the app loads your time entries
+
+---
+
+## Daily use
+
+- **Click the tray icon** to open/close the app
+- **Right-click the tray icon** for the menu (Show / Quit)
+- **+ New Entry** to log time
+- **Play button** next to an entry to start a timer on it
+- **Gear icon** to open Settings (logout, startup toggle)
+- The app hides when you click away — click the tray icon to bring it back
+
+---
+
+## Settings
+
+Open via the **gear icon** in the top-right corner.
+
+- **Account** — shows your name and email, with a Log Out button
+- **Startup** — toggle whether the app launches when Windows starts
+- **Reminders** — configure end-of-day and periodic nudge notifications
+
+---
+
+## Clearing saved data (to log in as a different user)
+
+Delete this file:
+```
+C:\Users\<YourName>\AppData\Roaming\ruddr-windows-app\config.json
+```
+Then reopen the app from the tray.
+
+---
+
+## Development setup
+
+**Requirements:** Node.js 18+
+
+```bash
+git clone https://github.com/colindiffer/ruddr_windows_app.git
+cd ruddr_windows_app
+npm install
+npm start
+```
+
+DevTools opens automatically in dev mode.
+
+---
+
+## Building the installer locally
+
 ```bash
 npm run build
 ```
-The output will be in the `dist/` folder.
 
-## Key Changes from Extension
-- **Authentication**: When logging in, the app opens an internal window to capture Ruddr session cookies.
-- **Storage**: Data is stored locally using `electron-store` instead of the browser's extension storage.
-- **Links**: External links open in the default system browser.
+Output: `dist/ruddr-windows-app Setup x.x.x.exe`
+
+---
+
+## Releasing a new version
+
+1. Make your changes
+
+2. Bump the version in `package.json`:
+   ```json
+   "version": "1.1.0"
+   ```
+
+3. Commit and push:
+   ```bash
+   git add -A
+   git commit -m "Release v1.1.0"
+   git push
+   ```
+
+4. Publish to GitHub Releases (requires a [GitHub token](https://github.com/settings/tokens) with `repo` scope):
+   ```bash
+   GH_TOKEN=your_token_here npm run publish
+   ```
+
+Installed copies will pick up the update within 4 hours and show a notification + "Restart to update" option in the tray menu.
+
+---
+
+## Architecture
+
+| File | Purpose |
+|------|---------|
+| `src/main/main.js` | Main process — window management, tray, IPC, auto-update, cookie handling |
+| `src/main/preload.js` | Shims Chrome extension APIs so the original extension code runs unchanged |
+| `src/renderer/index.html` | Main popup UI |
+| `src/renderer/popup.js` | Main popup logic |
+| `src/renderer/options/` | Settings window |
+| `src/renderer/lib/api.js` | Ruddr API calls |
+| `src/renderer/lib/storage.js` | Local storage helpers (via electron-store) |
+
+**Key technical decisions:**
+- `webSecurity: false` — allows the renderer to call the Ruddr API and GCP Cloud Function from a `file://` origin
+- `frame: false` — custom frameless window with drag region and window controls
+- `electron-store` — replaces `chrome.storage.local` for persistent data
+- `session.defaultSession` — shared cookie jar across the main and login windows
+- `electron-updater` — auto-update via GitHub Releases
