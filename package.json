@@ -1,0 +1,41 @@
+{
+  "name": "ruddr-windows-app",
+  "version": "1.0.0",
+  "description": "Ruddr Time Tracker Windows App",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "publish": "electron-builder --publish always"
+  },
+  "build": {
+    "appId": "com.ruddr.timetracker",
+    "win": {
+      "target": "nsis",
+      "icon": "src/renderer/icons/icon256.png"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "node_modules/**/*"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "colindiffer",
+      "repo": "ruddrextention"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8"
+  }
+}
