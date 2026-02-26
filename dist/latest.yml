@@ -1,0 +1,8 @@
+version: 1.0.0
+files:
+  - url: ruddr-windows-app-Setup-1.0.0.exe
+    sha512: v3zlfdmhXHnju8BeUzVdpUEsukY92rh8/xihDTUtL/L2q5Y4ZHiaqJHdr2IIYiVefKge7hmZJI8PKnJy8rH4pA==
+    size: 83296363
+path: ruddr-windows-app-Setup-1.0.0.exe
+sha512: v3zlfdmhXHnju8BeUzVdpUEsukY92rh8/xihDTUtL/L2q5Y4ZHiaqJHdr2IIYiVefKge7hmZJI8PKnJy8rH4pA==
+releaseDate: '2026-02-26T20:58:26.497Z'
