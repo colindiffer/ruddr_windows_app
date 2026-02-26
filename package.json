@@ -24,7 +24,7 @@
     "publish": {
       "provider": "github",
       "owner": "colindiffer",
-      "repo": "ruddrextention"
+      "repo": "ruddr_windows_app"
     }
   },
   "keywords": [],
