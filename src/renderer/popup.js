@@ -320,11 +320,13 @@ function renderWeekStatus() {
   let overall;
   if (statuses.every((s) => s === 'approved')) {
     overall = 'approved';
-  } else if (statuses.every((s) => s === 'pending_approval')) {
+  } else if (statuses.every((s) => s === 'pending_approval' || s === 'approved')) {
+    // All entries are submitted or already approved — nothing left to submit
     overall = 'pending_approval';
   } else if (statuses.some((s) => s === 'rejected')) {
     overall = 'rejected';
   } else if (statuses.some((s) => s === 'pending_approval')) {
+    // Some submitted, some still not_submitted — truly partial
     overall = 'mixed';
   } else {
     overall = 'not_submitted';
