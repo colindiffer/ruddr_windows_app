@@ -105,6 +105,7 @@ function createWindow() {
   // Hide when focus is lost (behaves like the extension popup)
   mainWindow.on('blur', () => {
     if (!app.isPackaged && mainWindow.webContents.isDevToolsFocused()) return;
+    if (mainWindow.isMinimized()) return; // minimized to taskbar — don't hide
     mainWindow.hide();
   });
 
