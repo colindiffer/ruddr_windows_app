@@ -82,7 +82,7 @@ function createWindow() {
     height: 600,
     frame: false,
     show: false, // start hidden — tray click reveals it
-    skipTaskbar: true, // don't show in the taskbar
+    skipTaskbar: store.get('minimizeToTray', false), // only skip taskbar if minimizing to tray
     icon: path.join(__dirname, '../renderer/icons/icon128.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -193,6 +193,7 @@ ipcMain.on('open-options', () => {
     },
   });
   optionsWin.loadFile(path.join(__dirname, '../renderer/options/options.html'));
+  optionsWin.on('closed', () => showWindow());
 });
 
 ipcMain.handle('logout', async () => {
@@ -225,10 +226,25 @@ ipcMain.handle('set-login-item', (event, enabled) => {
   app.setLoginItemSettings({ openAtLogin: enabled });
 });
 
+ipcMain.handle('get-minimize-to-tray', () => {
+  return store.get('minimizeToTray', false);
+});
+
+ipcMain.handle('set-minimize-to-tray', (event, enabled) => {
+  store.set('minimizeToTray', enabled);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setSkipTaskbar(enabled);
+  }
+});
+
 ipcMain.on('window-minimize', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win === mainWindow) {
-    win.hide(); // tray app — hide rather than minimise to taskbar
+    if (store.get('minimizeToTray', false)) {
+      win.hide();
+    } else {
+      win.minimize();
+    }
   } else {
     win.minimize();
   }

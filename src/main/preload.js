@@ -7,6 +7,8 @@ window.electronAPI = {
   onLoggedOut: (callback) => ipcRenderer.on('logged-out', callback),
   getLoginItem: () => ipcRenderer.invoke('get-login-item'),
   setLoginItem: (enabled) => ipcRenderer.invoke('set-login-item', enabled),
+  getMinimizeToTray: () => ipcRenderer.invoke('get-minimize-to-tray'),
+  setMinimizeToTray: (enabled) => ipcRenderer.invoke('set-minimize-to-tray', enabled),
 };
 
 // Shim for chrome.storage.local

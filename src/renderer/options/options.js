@@ -54,10 +54,20 @@ document.getElementById('autoStartEnabled').addEventListener('change', async (e)
   await window.electronAPI.setLoginItem(e.target.checked);
 });
 
+async function loadMinimizeToTray() {
+  const enabled = await window.electronAPI.getMinimizeToTray();
+  document.getElementById('minimizeToTrayEnabled').checked = enabled;
+}
+
+document.getElementById('minimizeToTrayEnabled').addEventListener('change', async (e) => {
+  await window.electronAPI.setMinimizeToTray(e.target.checked);
+});
+
 // --- Init ---
 async function init() {
   await loadAccountInfo();
   await loadAutoStart();
+  await loadMinimizeToTray();
   await loadReminderSettings();
 }
 
