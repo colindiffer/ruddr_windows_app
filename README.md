@@ -8,6 +8,7 @@ A native Windows desktop app for logging time in Ruddr, built with Electron. Liv
 
 - System tray icon — click to show/hide, right-click for menu
 - Log time, edit entries, run timers
+- Submit and unsubmit your timesheet for the whole week in one click
 - Auto-hides when you click away (like the Chrome extension popup)
 - Launches at Windows startup automatically
 - Auto-updates silently in the background
@@ -48,6 +49,8 @@ After installing:
 - **Right-click the tray icon** for the menu (Show / Quit)
 - **+ New Entry** to log time
 - **Play button** next to an entry to start a timer on it
+- **Submit Week** button (in the footer) to submit all entries for the current week — turns into **Unsubmit** once submitted
+- The week bar shows the week's total hours and submission status (Not submitted / Submitted / Approved / Rejected)
 - **Gear icon** to open Settings (logout, startup toggle)
 - The app hides when you click away — click the tray icon to bring it back
 
@@ -114,9 +117,19 @@ Output: `dist/ruddr-windows-app Setup x.x.x.exe`
    git push
    ```
 
-4. Publish to GitHub Releases (requires a [GitHub token](https://github.com/settings/tokens) with `repo` scope):
+4. Build the installer (`npm run publish` will fail on the GitHub upload step — that's fine, the `.exe` is built locally):
    ```bash
-   GH_TOKEN=your_token_here npm run publish
+   npm run publish
+   ```
+
+5. Create the GitHub release and upload the installer via the `gh` CLI:
+   ```bash
+   gh release create v1.x.x \
+     "dist/ruddr-windows-app Setup 1.x.x.exe" \
+     "dist/ruddr-windows-app Setup 1.x.x.exe.blockmap" \
+     dist/latest.yml \
+     --title "v1.x.x" \
+     --notes "Description of changes"
    ```
 
 Installed copies will pick up the update within 4 hours and show a notification + "Restart to update" option in the tray menu.
