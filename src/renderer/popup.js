@@ -537,7 +537,7 @@ async function startTimerOnEntry(entry) {
   try {
     let apiTimer = false;
     try {
-      await updateTimeEntry(entry.id, { timerStartedAt: new Date().toISOString() });
+      await updateTimeEntry(entry.id, { timerStartedAt: new Date().toISOString(), notes: entry.notes || '' });
       apiTimer = true;
     } catch {
       // API doesn't support timerStartedAt, use local
@@ -614,7 +614,7 @@ async function startTimer() {
       // Start timer on existing entry
       let apiTimer = false;
       try {
-        await updateTimeEntry(targetEntry.id, { timerStartedAt: new Date().toISOString() });
+        await updateTimeEntry(targetEntry.id, { timerStartedAt: new Date().toISOString(), notes: targetEntry.notes || notes });
         apiTimer = true;
       } catch {
         // API doesn't support timerStartedAt, use local
@@ -748,7 +748,7 @@ async function pauseTimer() {
       state.entryId = created.id;
     } else {
       // Local timer with existing entry: update minutes
-      await updateTimeEntry(state.entryId, { minutes: totalAccumulated });
+      await updateTimeEntry(state.entryId, { minutes: totalAccumulated, notes: state.notes || '' });
     }
 
     const pausedState = {
