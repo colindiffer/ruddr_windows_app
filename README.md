@@ -6,10 +6,9 @@ A native Windows desktop app for logging time in Ruddr, built with Electron. Liv
 
 ## Features
 
-- System tray icon — click to show/hide, right-click for menu
 - Log time, edit entries, run timers
 - Submit and unsubmit your timesheet for the whole week in one click
-- Auto-hides when you click away (like the Chrome extension popup)
+- Runs as a regular window, or optionally minimizes to the system tray
 - Launches at Windows startup automatically
 - Auto-updates silently in the background
 
@@ -45,14 +44,12 @@ After installing:
 
 ## Daily use
 
-- **Click the tray icon** to open/close the app
-- **Right-click the tray icon** for the menu (Show / Quit)
 - **+ New Entry** to log time
 - **Play button** next to an entry to start a timer on it
 - **Submit Week** button (in the footer) to submit all entries for the current week — turns into **Unsubmit** once submitted
 - The week bar shows the week's total hours and submission status (Not submitted / Submitted / Approved / Rejected)
-- **Gear icon** to open Settings (logout, startup toggle)
-- The app hides when you click away — click the tray icon to bring it back
+- **Gear icon** to open Settings (logout, startup, tray behaviour)
+- A tray icon is always available — right-click for Show / Quit
 
 ---
 
@@ -62,6 +59,7 @@ Open via the **gear icon** in the top-right corner.
 
 - **Account** — shows your name and email, with a Log Out button
 - **Startup** — toggle whether the app launches when Windows starts
+- **Minimize to tray** — when enabled, minimizing sends the app to the system tray instead of the taskbar, and it auto-hides when you click away
 - **Reminders** — configure end-of-day and periodic nudge notifications
 
 ---
