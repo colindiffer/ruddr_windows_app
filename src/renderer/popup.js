@@ -5,6 +5,7 @@ import { listTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, lis
 let currentDate = new Date();
 currentDate.setHours(0, 0, 0, 0);
 let entries = [];
+let weekEntries = [];
 let projects = []; // { id, name, clientName } sorted alphabetically
 let memberProjectMap = {}; // projectId -> project-member record (includes roles)
 let editingEntry = null; // null = new, object = editing
@@ -49,6 +50,9 @@ const timerProject = document.getElementById('timerProject');
 const timerStopBtn = document.getElementById('timerStopBtn');
 const timerResumeBtn = document.getElementById('timerResumeBtn');
 const timerDismissBtn = document.getElementById('timerDismissBtn');
+const weekHours = document.getElementById('weekHours');
+const weekStatusBadge = document.getElementById('weekStatusBadge');
+const submitWeekBtn = document.getElementById('submitWeekBtn');
 
 // --- Helpers ---
 function addDays(d, n) {
@@ -81,6 +85,15 @@ function hoursToMinutes(h) {
 function isToday(d) {
   const today = new Date();
   return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+}
+
+function getWeekStart(d) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 = Sun
+  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
 
 function showToast(message, type = 'error') {
@@ -274,6 +287,72 @@ async function attemptLinkMemberFromPendingEmail() {
   }
 }
 
+// --- Week Status ---
+async function loadWeekStatus() {
+  try {
+    const weekStart = getWeekStart(currentDate);
+    const weekEnd = addDays(weekStart, 6);
+    const memberId = await getMemberId();
+    const response = await listTimeEntries({
+      memberId,
+      dateOnOrAfter: formatDate(weekStart),
+      dateOnOrBefore: formatDate(weekEnd),
+    });
+    weekEntries = response.results || [];
+    renderWeekStatus();
+  } catch {
+    // fail silently — week bar stays in previous state
+  }
+}
+
+function renderWeekStatus() {
+  const totalMinutes = weekEntries.reduce((s, e) => s + (e.minutes || 0), 0);
+  weekHours.textContent = minutesToHours(totalMinutes) + 'h';
+
+  if (weekEntries.length === 0) {
+    weekStatusBadge.textContent = 'No entries';
+    weekStatusBadge.className = 'week-badge week-badge-none';
+    submitWeekBtn.classList.add('hidden');
+    return;
+  }
+
+  const statuses = weekEntries.map((e) => e.statusId || 'not_submitted');
+  let overall;
+  if (statuses.every((s) => s === 'approved')) {
+    overall = 'approved';
+  } else if (statuses.every((s) => s === 'pending_approval')) {
+    overall = 'pending_approval';
+  } else if (statuses.some((s) => s === 'rejected')) {
+    overall = 'rejected';
+  } else if (statuses.some((s) => s === 'pending_approval')) {
+    overall = 'mixed';
+  } else {
+    overall = 'not_submitted';
+  }
+
+  const labels = {
+    not_submitted: 'Not submitted',
+    pending_approval: 'Submitted',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    mixed: 'Partially submitted',
+  };
+  weekStatusBadge.textContent = labels[overall];
+  weekStatusBadge.className = `week-badge week-badge-${overall.replace(/_/g, '-')}`;
+
+  if (overall === 'approved') {
+    submitWeekBtn.classList.add('hidden');
+  } else if (overall === 'pending_approval') {
+    submitWeekBtn.textContent = 'Unsubmit';
+    submitWeekBtn.dataset.action = 'unsubmit';
+    submitWeekBtn.classList.remove('hidden');
+  } else {
+    submitWeekBtn.textContent = 'Submit Week';
+    submitWeekBtn.dataset.action = 'submit';
+    submitWeekBtn.classList.remove('hidden');
+  }
+}
+
 // --- Day View ---
 async function loadDay() {
   const loggedIn = await isRuddrLoggedIn();
@@ -300,6 +379,7 @@ async function loadDay() {
   } catch (err) {
     dayContainer.innerHTML = `<div class="empty-state">Failed to load entries.<br><small>${err.message}</small></div>`;
   }
+  loadWeekStatus(); // non-awaited: updates week bar independently
 }
 
 function updateDayLabel() {
@@ -856,6 +936,31 @@ timerStopBtn.addEventListener('click', pauseTimer);
 timerResumeBtn.addEventListener('click', resumeTimer);
 timerDismissBtn.addEventListener('click', dismissTimer);
 
+submitWeekBtn.addEventListener('click', async () => {
+  const action = submitWeekBtn.dataset.action;
+  submitWeekBtn.disabled = true;
+  try {
+    if (action === 'submit') {
+      const toSubmit = weekEntries.filter((e) => {
+        const s = e.statusId || 'not_submitted';
+        return s === 'not_submitted' || s === 'rejected';
+      });
+      await Promise.all(toSubmit.map((e) => updateTimeEntry(e.id, { statusId: 'pending_approval' })));
+      showToast('Timesheet submitted', 'success');
+    } else {
+      const toUnsubmit = weekEntries.filter((e) => e.statusId === 'pending_approval');
+      await Promise.all(toUnsubmit.map((e) => updateTimeEntry(e.id, { statusId: 'not_submitted' })));
+      showToast('Timesheet unsubmitted', 'success');
+    }
+    await loadWeekStatus();
+    await loadDay();
+  } catch (err) {
+    showToast('Failed: ' + err.message);
+  } finally {
+    submitWeekBtn.disabled = false;
+  }
+});
+
 startTimerSubmitBtn.addEventListener('click', startTimer);
 
 backBtn.addEventListener('click', () => {
@@ -988,6 +1093,7 @@ window.electronAPI.onLoggedOut(() => {
   stopLoginPolling();
   projects = [];
   entries = [];
+  weekEntries = [];
   editingEntry = null;
   showSetupView();
 });
