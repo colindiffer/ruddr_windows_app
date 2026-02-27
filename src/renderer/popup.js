@@ -706,7 +706,7 @@ async function pauseTimer() {
   try {
     if (state.apiTimer && state.entryId) {
       // Pause API timer: clear timerStartedAt, API calculates minutes
-      await updateTimeEntry(state.entryId, { timerStartedAt: null });
+      await updateTimeEntry(state.entryId, { timerStartedAt: null, notes: state.notes || '' });
       // Fetch entry to get actual accumulated minutes from API
       try {
         const entry = await getTimeEntry(state.entryId);
@@ -782,7 +782,7 @@ async function resumeTimer() {
   try {
     if (state.apiTimer && state.entryId) {
       // Resume API timer: set timerStartedAt again
-      await updateTimeEntry(state.entryId, { timerStartedAt: new Date().toISOString() });
+      await updateTimeEntry(state.entryId, { timerStartedAt: new Date().toISOString(), notes: state.notes || '' });
     }
 
     const runningState = {
