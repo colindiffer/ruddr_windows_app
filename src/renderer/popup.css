@@ -366,6 +366,12 @@ body {
   background: var(--color-bg);
 }
 
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .daily-total {
   font-size: 13px;
   color: var(--color-text-secondary);

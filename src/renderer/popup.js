@@ -945,11 +945,11 @@ submitWeekBtn.addEventListener('click', async () => {
         const s = e.statusId || 'not_submitted';
         return s === 'not_submitted' || s === 'rejected';
       });
-      await Promise.all(toSubmit.map((e) => updateTimeEntry(e.id, { statusId: 'pending_approval' })));
+      await Promise.all(toSubmit.map((e) => updateTimeEntry(e.id, { statusId: 'pending_approval', notes: e.notes || '' })));
       showToast('Timesheet submitted', 'success');
     } else {
       const toUnsubmit = weekEntries.filter((e) => e.statusId === 'pending_approval');
-      await Promise.all(toUnsubmit.map((e) => updateTimeEntry(e.id, { statusId: 'not_submitted' })));
+      await Promise.all(toUnsubmit.map((e) => updateTimeEntry(e.id, { statusId: 'not_submitted', notes: e.notes || '' })));
       showToast('Timesheet unsubmitted', 'success');
     }
     await loadWeekStatus();
