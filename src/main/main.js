@@ -102,10 +102,11 @@ function createWindow() {
     }
   });
 
-  // Hide when focus is lost (behaves like the extension popup)
+  // Hide when focus is lost only in tray mode (mimics extension popup behaviour)
   mainWindow.on('blur', () => {
     if (!app.isPackaged && mainWindow.webContents.isDevToolsFocused()) return;
-    if (mainWindow.isMinimized()) return; // minimized to taskbar — don't hide
+    if (mainWindow.isMinimized()) return;
+    if (!store.get('minimizeToTray', false)) return; // normal window mode — don't hide on blur
     mainWindow.hide();
   });
 
