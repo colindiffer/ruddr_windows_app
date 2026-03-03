@@ -1,0 +1,20 @@
+ How to release next time:
+
+  # 1. Bump version in package.json (e.g. 1.0.8 → 1.0.9)
+
+  # 2. Commit & push
+  git add package.json
+  git commit -m "Bump version to 1.0.x"
+  git push origin master
+
+  # 3. Build the installer
+  npm run publish
+  # (will fail on the GitHub upload — that's fine, the .exe is built)
+
+  # 4. Publish the release via gh CLI
+  gh release create v1.0.x \
+    "dist/ruddr-windows-app Setup 1.0.x.exe" \
+    "dist/ruddr-windows-app Setup 1.0.x.exe.blockmap" \
+    dist/latest.yml \
+    --title "v1.0.x" \
+    --notes "Description of changes"

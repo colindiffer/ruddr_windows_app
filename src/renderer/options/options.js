@@ -1,4 +1,5 @@
 import { getReminderSettings, setReminderSettings } from '../lib/storage.js';
+import { trackEvent, trackView } from '../lib/analytics.js';
 
 // --- Reminder elements ---
 const endOfDayEnabled = document.getElementById('endOfDayEnabled');
@@ -65,6 +66,7 @@ document.getElementById('minimizeToTrayEnabled').addEventListener('change', asyn
 
 // --- Init ---
 async function init() {
+  trackView('Settings');
   await loadAccountInfo();
   await loadAutoStart();
   await loadMinimizeToTray();
@@ -108,6 +110,7 @@ saveRemindersBtn.addEventListener('click', async () => {
   await setReminderSettings(settings);
   chrome.runtime.sendMessage({ type: 'updateReminders' });
 
+  trackEvent('options_save', { type: 'reminders' });
   setStatus(reminderSaveStatus, 'Saved!', 'success');
   showToast('Reminder settings saved', 'success');
 });
