@@ -64,6 +64,24 @@ document.getElementById('minimizeToTrayEnabled').addEventListener('change', asyn
   await window.electronAPI.setMinimizeToTray(e.target.checked);
 });
 
+// --- About / Updates ---
+async function loadAbout() {
+  const version = await window.electronAPI.getAppVersion();
+  document.getElementById('appVersion').textContent = `v${version}`;
+}
+
+document.getElementById('checkUpdatesBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('checkUpdatesBtn');
+  const status = document.getElementById('updateStatus');
+  btn.disabled = true;
+  setStatus(status, 'Checking...', '');
+  await window.electronAPI.checkForUpdates();
+  setTimeout(() => {
+    setStatus(status, 'Up to date!', 'success');
+    btn.disabled = false;
+  }, 3000);
+});
+
 // --- Init ---
 async function init() {
   trackView('Settings');
@@ -71,6 +89,7 @@ async function init() {
   await loadAutoStart();
   await loadMinimizeToTray();
   await loadReminderSettings();
+  await loadAbout();
 }
 
 // --- Reminder Settings ---

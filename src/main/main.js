@@ -253,6 +253,13 @@ ipcMain.on('window-minimize', (event) => {
 });
 
 // Main window hides to tray; other windows (options) close normally
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+ipcMain.handle('check-for-updates', () => {
+  if (app.isPackaged) autoUpdater.checkForUpdates();
+});
+
+// Main window hides to tray; other windows (options) close normally
 ipcMain.on('window-close', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win === mainWindow) {
