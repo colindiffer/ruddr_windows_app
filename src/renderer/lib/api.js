@@ -116,6 +116,10 @@ export async function listProjectMembers() {
   return results;
 }
 
+export async function getMember(id) {
+  return ruddrFetch(`/members/${id}`);
+}
+
 export async function listMembers() {
   const results = [];
   let startingAfter = null;

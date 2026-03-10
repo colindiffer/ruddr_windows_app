@@ -7,6 +7,68 @@ const store = new Store();
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let endOfDayTimer = null;
+
+const RUDDR_BASE_URL = 'https://www.ruddr.io/api/workspace';
+const CLOUD_FUNCTION_URL = 'https://europe-west2-ruddr-reporting.cloudfunctions.net/getRuddrApiKey';
+const CLOUD_FUNCTION_SECRET = '0b62f8e167ae0e7b5019c994be1b9003052fbda661c17776dd59deb84d03ab74';
+const KEY_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+async function getApiKeyForMain() {
+  const cache = store.get('apiKeyCache');
+  const now = Date.now();
+  if (cache && cache.key && (now - cache.fetchedAt) < KEY_CACHE_TTL) return cache.key;
+  const resp = await fetch(CLOUD_FUNCTION_URL, { headers: { 'Authorization': `Bearer ${CLOUD_FUNCTION_SECRET}` } });
+  if (!resp.ok) throw new Error('Key fetch failed');
+  const { key } = await resp.json();
+  store.set('apiKeyCache', { key, fetchedAt: now });
+  return key;
+}
+
+function scheduleEndOfDayReminder() {
+  if (endOfDayTimer) { clearTimeout(endOfDayTimer); endOfDayTimer = null; }
+  const settings = store.get('reminderSettings') || {};
+  if (!settings.endOfDay) return;
+  const [h, m] = (settings.endOfDayTime || '17:00').split(':').map(Number);
+  const now = new Date();
+  const target = new Date();
+  target.setHours(h, m, 0, 0);
+  if (target <= now) target.setDate(target.getDate() + 1);
+  const delayMs = target.getTime() - now.getTime();
+  endOfDayTimer = setTimeout(async () => {
+    await checkAndNotifyEndOfDay();
+    scheduleEndOfDayReminder();
+  }, delayMs);
+}
+
+async function checkAndNotifyEndOfDay() {
+  const memberId = store.get('memberId');
+  if (!memberId) return;
+  const settings = store.get('reminderSettings') || {};
+  const minHours = settings.endOfDayMinHours || 7;
+  try {
+    const apiKey = await getApiKeyForMain();
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const params = new URLSearchParams({ memberId, dateOnOrAfter: todayStr, dateOnOrBefore: todayStr, limit: '100' });
+    const response = await fetch(`${RUDDR_BASE_URL}/time-entries?${params}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    const entries = (data.results || []).filter((e) => e.date === todayStr && e.member?.id === memberId);
+    const totalMinutes = entries.reduce((sum, e) => sum + (e.minutes || 0), 0);
+    if (totalMinutes < minHours * 60) {
+      const totalHours = (totalMinutes / 60).toFixed(1);
+      new Notification({
+        title: 'Ruddr Time Tracker',
+        body: `You've logged ${totalHours}h today. Don't forget to complete your timesheet!`,
+      }).show();
+    }
+  } catch {
+    // Silently fail
+  }
+}
 
 // --- Window position (above tray icon) ---
 function getWindowPosition() {
@@ -115,10 +177,25 @@ function createWindow() {
   }
 }
 
+// Single instance lock — if another instance tries to start, focus the existing window instead
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.whenReady().then(() => {
   createWindow();
   createTray();
   setupAutoUpdater();
+  scheduleEndOfDayReminder();
 
   // Enable auto-start by default on first packaged launch
   if (app.isPackaged && !store.get('autoStartSet')) {
@@ -200,7 +277,7 @@ ipcMain.on('open-options', () => {
 
 ipcMain.handle('logout', async () => {
   // Clear all user data from store
-  ['memberId', 'memberName', 'memberEmail', 'pendingEmail', 'apiKeyCache'].forEach((key) => store.delete(key));
+  ['memberId', 'memberName', 'memberEmail', 'pendingEmail', 'apiKeyCache', 'identityVerifiedAt'].forEach((key) => store.delete(key));
 
   // Clear Ruddr session cookies
   for (const url of ['https://www.ruddr.io', 'https://ruddr.io']) {
@@ -257,6 +334,10 @@ ipcMain.handle('get-app-version', () => app.getVersion());
 
 ipcMain.handle('check-for-updates', () => {
   if (app.isPackaged) autoUpdater.checkForUpdates();
+});
+
+ipcMain.on('update-reminders', () => {
+  scheduleEndOfDayReminder();
 });
 
 // Main window hides to tray; other windows (options) close normally

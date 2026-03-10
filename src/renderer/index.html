@@ -20,9 +20,9 @@
   <div id="setupView" class="view hidden">
     <div class="setup-prompt">
       <div class="setup-icon">&#9881;</div>
-      <h2>Welcome to Ruddr</h2>
-      <p>Enter your email, then log in to Ruddr.</p>
-      <div class="field" style="margin-top: 12px;">
+      <h2 id="setupHeading">Welcome to Ruddr</h2>
+      <p id="setupSubtitle">Enter your email, then log in to Ruddr.</p>
+      <div id="setupEmailField" class="field" style="margin-top: 12px;">
         <label for="setupEmail">Your email address</label>
         <input type="email" id="setupEmail" placeholder="you@company.com" autocomplete="email">
       </div>
@@ -62,13 +62,17 @@
 
     <div class="day-nav">
       <button id="prevDay" class="btn-icon nav-arrow">‹</button>
-      <button id="currentDayLabel" class="btn-icon day-label-btn">Today</button>
+      <div class="day-nav-center">
+        <div id="monthYearLabel" class="month-year-label"></div>
+        <div id="dayPills" class="day-pills"></div>
+      </div>
       <button id="nextDay" class="btn-icon nav-arrow">›</button>
     </div>
 
     <div id="weekBar" class="week-bar">
       <span id="weekStatusBadge" class="week-badge week-badge-none">—</span>
       <span class="week-hours">Week: <strong id="weekHours">—</strong></span>
+      <button id="copyLastWeekBtn" class="btn-week-action">Copy Over</button>
     </div>
 
     <div id="dayContainer" class="day-container">
@@ -81,6 +85,7 @@
     <div class="day-footer">
       <span class="daily-total">Total: <strong id="dailyTotal">0h</strong></span>
       <div class="footer-actions">
+        <button id="deleteSelectedBtn" class="btn-danger hidden">Delete selected</button>
         <button id="submitWeekBtn" class="btn-week-action hidden">Submit Week</button>
         <button id="addEntryBtn" class="btn-primary add-btn">+ New Entry</button>
       </div>
@@ -143,6 +148,35 @@
         </div>
       </div>
     </form>
+  </div>
+
+  <!-- Copy over modal -->
+  <div id="copyModal" class="modal-overlay hidden">
+    <div class="modal">
+      <p>Copy over</p>
+      <div class="copy-options">
+        <label class="copy-option">
+          <input type="radio" name="copyMode" value="whole-week" checked>
+          <span>Whole week (Mon → Mon, Tue → Tue…)</span>
+        </label>
+        <label class="copy-option">
+          <input type="radio" name="copyMode" value="today-only">
+          <span>Today only (last week's same day → today)</span>
+        </label>
+        <label class="copy-option">
+          <input type="radio" name="copyMode" value="all-to-today">
+          <span>Whole week to today only</span>
+        </label>
+        <label class="copy-option">
+          <input type="radio" name="copyMode" value="favourites">
+          <span>Favourites to today</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="copyCancelBtn" class="btn-secondary">Cancel</button>
+        <button id="copyConfirmBtn" class="btn-primary">Copy</button>
+      </div>
+    </div>
   </div>
 
   <!-- Delete confirmation modal -->

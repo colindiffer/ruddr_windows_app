@@ -127,7 +127,7 @@ saveRemindersBtn.addEventListener('click', async () => {
   };
 
   await setReminderSettings(settings);
-  chrome.runtime.sendMessage({ type: 'updateReminders' });
+  window.electronAPI.updateReminders();
 
   trackEvent('options_save', { type: 'reminders' });
   setStatus(reminderSaveStatus, 'Saved!', 'success');

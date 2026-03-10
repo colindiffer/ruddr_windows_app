@@ -1,4 +1,4 @@
-import { getMemberId, setMemberId, getLastUsedProjectId, setLastUsedProjectId, getLastUsedTaskId, setLastUsedTaskId, addRecentProject, getTimerState, setTimerState, clearTimerState } from './lib/storage.js';
+import { getMemberId, setMemberId, getMemberEmail, getLastUsedProjectId, setLastUsedProjectId, getLastUsedTaskId, setLastUsedTaskId, addRecentProject, getTimerState, setTimerState, clearTimerState, getFavouriteProjects, setFavouriteProjects } from './lib/storage.js';
 import { listTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, listProjectMembers, listProjectTasks, listMembers } from './lib/api.js';
 import { trackEvent, trackView } from './lib/analytics.js';
 
@@ -15,18 +15,22 @@ let timerState = null; // running timer derived from API — no local persistenc
 let loginPollInterval = null;
 let lastLoadAt = 0; // debounce focus reloads
 let loginPollStartedAt = 0;
+let reloginMode = false; // true when session expired but memberId already known
 
 // --- DOM refs ---
 const setupView = document.getElementById('setupView');
 const weeklyView = document.getElementById('weeklyView');
 const entryView = document.getElementById('entryView');
 const setupEmail = document.getElementById('setupEmail');
+const setupEmailField = document.getElementById('setupEmailField');
+const setupHeading = document.getElementById('setupHeading');
+const setupSubtitle = document.getElementById('setupSubtitle');
 const setupStatus = document.getElementById('setupStatus');
 const openLoginBtn = document.getElementById('openLoginBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const prevDayBtn = document.getElementById('prevDay');
 const nextDayBtn = document.getElementById('nextDay');
-const currentDayLabel = document.getElementById('currentDayLabel');
+const dayPillsContainer = document.getElementById('dayPills');
 const dayContainer = document.getElementById('dayContainer');
 const dailyTotalEl = document.getElementById('dailyTotal');
 const addEntryBtn = document.getElementById('addEntryBtn');
@@ -56,6 +60,11 @@ const timerDismissBtn = document.getElementById('timerDismissBtn');
 const weekHours = document.getElementById('weekHours');
 const weekStatusBadge = document.getElementById('weekStatusBadge');
 const submitWeekBtn = document.getElementById('submitWeekBtn');
+const copyLastWeekBtn = document.getElementById('copyLastWeekBtn');
+const copyModal = document.getElementById('copyModal');
+const copyCancelBtn = document.getElementById('copyCancelBtn');
+const copyConfirmBtn = document.getElementById('copyConfirmBtn');
+const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
 
 // --- Helpers ---
 function addDays(d, n) {
@@ -207,12 +216,44 @@ async function init() {
         return;
       }
     }
-    showSetupView();
+    // Session expired but we know who the user is — skip email entry step
+    showSetupView(!loggedIn && !!memberId);
+    return;
+  }
+
+  // Verify the stored memberId matches the expected user (once per 24h) — prevents
+  // showing another person's data if stored identity ever becomes stale or mismatched.
+  const identityValid = await verifyStoredIdentity(memberId);
+  if (!identityValid) {
+    await chrome.storage.local.remove(['memberId', 'memberName', 'memberEmail', 'identityVerifiedAt']);
+    showSetupView(false);
     return;
   }
 
   trackEvent('app_start');
   await startAppView();
+}
+
+async function verifyStoredIdentity(memberId) {
+  const VERIFY_TTL = 24 * 60 * 60 * 1000;
+  const { identityVerifiedAt } = await chrome.storage.local.get('identityVerifiedAt');
+  if (identityVerifiedAt && Date.now() - identityVerifiedAt < VERIFY_TTL) return true;
+
+  try {
+    const members = await listMembers();
+    const member = members.find((m) => m.id === memberId);
+    if (!member) return false;
+    const storedEmail = await getMemberEmail();
+    if (storedEmail && member.email && member.email.toLowerCase() !== storedEmail.toLowerCase()) {
+      console.warn('[identity] Email mismatch — stored:', storedEmail, 'actual:', member.email);
+      return false;
+    }
+    await chrome.storage.local.set({ identityVerifiedAt: Date.now() });
+    return true;
+  } catch {
+    // Network error: trust stored identity to avoid locking out users offline
+    return true;
+  }
 }
 
 async function startAppView() {
@@ -221,7 +262,19 @@ async function startAppView() {
   await loadDay();
 }
 
-function showSetupView() {
+function showSetupView(isRelogin = false) {
+  reloginMode = isRelogin;
+  if (isRelogin) {
+    setupHeading.textContent = 'Session expired';
+    setupSubtitle.textContent = 'Your session has expired. Click below to sign back in.';
+    setupEmailField.classList.add('hidden');
+    openLoginBtn.textContent = 'Sign in to Ruddr';
+  } else {
+    setupHeading.textContent = 'Welcome to Ruddr';
+    setupSubtitle.textContent = 'Enter your email, then log in to Ruddr.';
+    setupEmailField.classList.remove('hidden');
+    openLoginBtn.textContent = 'Login at Ruddr';
+  }
   showView(setupView);
   startLoginPolling();
 }
@@ -235,14 +288,16 @@ function startLoginPolling() {
   loginPollInterval = setInterval(async () => {
     if (Date.now() - loginPollStartedAt > LOGIN_POLL_TIMEOUT_MS) {
       stopLoginPolling();
-      setStatus(setupStatus, 'Still not linked. You can retry or change email.', 'error');
+      setStatus(setupStatus, reloginMode ? 'Login not detected. Try again.' : 'Still not linked. You can retry or change email.', 'error');
       return;
     }
     const loggedIn = await isRuddrLoggedIn();
     if (!loggedIn) return;
-    const linked = await attemptLinkMemberFromPendingEmail();
-    if (linked) {
+    if (reloginMode) {
       await startAppView();
+    } else {
+      const linked = await attemptLinkMemberFromPendingEmail();
+      if (linked) await startAppView();
     }
   }, LOGIN_POLL_INTERVAL_MS);
 }
@@ -358,6 +413,9 @@ function renderWeekStatus() {
 // --- Day View ---
 async function loadDay() {
   lastLoadAt = Date.now();
+  deleteSelectedBtn.classList.add('hidden');
+  deleteSelectedBtn.disabled = false;
+  deleteSelectedBtn.textContent = 'Delete selected';
   const loggedIn = await isRuddrLoggedIn();
   if (!loggedIn) {
     showSetupView();
@@ -378,7 +436,7 @@ async function loadDay() {
     // Client-side date filter as safety net
     const allEntries = response.results || [];
     entries = allEntries.filter((e) => e.date === dateStr);
-    renderDay();
+    await renderDay();
     initTimerBar();
   } catch (err) {
     dayContainer.innerHTML = `<div class="empty-state">Failed to load entries.<br><small>${err.message}</small></div>`;
@@ -387,14 +445,44 @@ async function loadDay() {
 }
 
 function updateDayLabel() {
-  if (isToday(currentDate)) {
-    currentDayLabel.textContent = 'Today';
+  const weekStart = getWeekStart(currentDate);
+  const weekEnd = addDays(weekStart, 6);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const monthYearLabel = document.getElementById('monthYearLabel');
+  if (weekStart.getMonth() === weekEnd.getMonth()) {
+    monthYearLabel.textContent = `${monthNames[weekStart.getMonth()]} ${weekStart.getFullYear()}`;
+  } else if (weekStart.getFullYear() === weekEnd.getFullYear()) {
+    monthYearLabel.textContent = `${monthNames[weekStart.getMonth()].slice(0, 3)} / ${monthNames[weekEnd.getMonth()].slice(0, 3)} ${weekStart.getFullYear()}`;
   } else {
-    currentDayLabel.textContent = formatDayLabel(currentDate);
+    monthYearLabel.textContent = `${monthNames[weekStart.getMonth()].slice(0, 3)} ${weekStart.getFullYear()} / ${monthNames[weekEnd.getMonth()].slice(0, 3)} ${weekEnd.getFullYear()}`;
+  }
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  dayPillsContainer.innerHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(weekStart, i);
+    const btn = document.createElement('button');
+    btn.className = 'day-pill';
+    if (d.getTime() === today.getTime()) btn.classList.add('today');
+    if (d.getTime() === currentDate.getTime()) btn.classList.add('selected');
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'pill-name';
+    nameSpan.textContent = dayNames[i];
+    const dateSpan = document.createElement('span');
+    dateSpan.className = 'pill-date';
+    dateSpan.textContent = d.getDate();
+    btn.appendChild(nameSpan);
+    btn.appendChild(dateSpan);
+    btn.addEventListener('click', () => {
+      currentDate = d;
+      loadDay();
+    });
+    dayPillsContainer.appendChild(btn);
   }
 }
 
-function renderDay() {
+async function renderDay() {
   if (entries.length === 0) {
     const dayLabel = isToday(currentDate) ? 'today' : 'on ' + formatDayLabel(currentDate);
     dayContainer.innerHTML = `<div class="empty-state">No entries ${dayLabel}.<br>Click "+ New Entry" to add one.</div>`;
@@ -418,6 +506,7 @@ function renderDay() {
         projectName: e.project?.name || 'Unknown project',
         taskId,
         taskName: e.task?.name || '',
+        roleId: e.role?.id || '',
         totalMinutes: 0,
         entries: [],
       };
@@ -430,6 +519,8 @@ function renderDay() {
 
   const dayTotal = entries.reduce((sum, e) => sum + (e.minutes || 0), 0);
 
+  const favIds = await getFavouriteProjects();
+  const favProjectIds = new Set(favIds.map((k) => k.split('::')[0]));
   let html = '<div class="day-entries">';
 
   groups.forEach((g) => {
@@ -438,13 +529,17 @@ function renderDay() {
     const notes = g.entries.map((e) => e.notes).filter(Boolean);
     const uniqueNotes = [...new Set(notes)];
     const detail = [g.taskName, ...uniqueNotes].filter(Boolean).join(' \u00b7 ');
+    const isFav = favProjectIds.has(g.projectId);
 
-    html += `<div class="entry-item" data-id="${firstEntry.id}">
+    const entryIds = g.entries.map((e) => e.id).join(',');
+    html += `<div class="entry-item" data-id="${firstEntry.id}" data-entry-ids="${entryIds}">
+      <input type="checkbox" class="entry-checkbox" data-entry-ids="${entryIds}">
       <div class="entry-info">
         <div class="entry-project">${escapeHtml(g.projectName)}</div>
         ${detail ? `<div class="entry-detail">${escapeHtml(detail)}</div>` : ''}
       </div>
-      <span class="entry-hours">${minutesToHours(g.totalMinutes)}h</span>
+      <span class="entry-hours">${g.totalMinutes <= 1 ? '—' : `${minutesToHours(g.totalMinutes)}h`}</span>
+      <button class="entry-fav-btn${isFav ? ' is-favourite' : ''}" data-project-id="${g.projectId}" data-task-id="${g.taskId || ''}" data-role-id="${g.roleId || ''}" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}">${isFav ? '★' : '☆'}</button>
       <button class="entry-play-btn" data-id="${firstEntry.id}" title="Start timer">&#9654;</button>
     </div>`;
   });
@@ -454,12 +549,30 @@ function renderDay() {
   dayContainer.innerHTML = html;
   dailyTotalEl.textContent = minutesToHours(dayTotal) + 'h';
 
+  const dayEntriesEl = dayContainer.querySelector('.day-entries');
+
+  function updateDeleteBtn() {
+    const anyChecked = dayContainer.querySelector('.entry-checkbox:checked');
+    deleteSelectedBtn.classList.toggle('hidden', !anyChecked);
+    dayEntriesEl.classList.toggle('has-selection', !!anyChecked);
+  }
+
   // Attach click handlers for entries
   dayContainer.querySelectorAll('.entry-item').forEach((el) => {
     el.addEventListener('click', (e) => {
-      if (e.target.closest('.entry-play-btn')) return;
+      if (e.target.closest('.entry-play-btn') || e.target.closest('.entry-fav-btn')) return;
+      if (e.target.closest('.entry-checkbox')) return;
       const entry = entries.find((en) => en.id === el.dataset.id);
       if (entry) openEntryForm(entry);
+    });
+  });
+
+  // Attach checkbox handlers
+  dayContainer.querySelectorAll('.entry-checkbox').forEach((cb) => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      cb.closest('.entry-item').classList.toggle('selected', cb.checked);
+      updateDeleteBtn();
     });
   });
 
@@ -469,6 +582,34 @@ function renderDay() {
       e.stopPropagation();
       const entry = entries.find((en) => en.id === el.dataset.id);
       if (entry) startTimerOnEntry(entry);
+    });
+  });
+
+  // Attach click handlers for star buttons
+  dayContainer.querySelectorAll('.entry-fav-btn').forEach((el) => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const projectId = el.dataset.projectId;
+      const favKey = `${projectId}::${el.dataset.taskId || ''}::${el.dataset.roleId || ''}`;
+      const currentFavIds = await getFavouriteProjects();
+      const isCurrentlyFav = currentFavIds.some((id) => id.split('::')[0] === projectId);
+      let newFavIds;
+      if (isCurrentlyFav) {
+        newFavIds = currentFavIds.filter((id) => id.split('::')[0] !== projectId);
+        dayContainer.querySelectorAll(`.entry-fav-btn[data-project-id="${projectId}"]`).forEach((btn) => {
+          btn.textContent = '☆';
+          btn.classList.remove('is-favourite');
+          btn.title = 'Add to favourites';
+        });
+      } else {
+        newFavIds = [...currentFavIds, favKey];
+        dayContainer.querySelectorAll(`.entry-fav-btn[data-project-id="${projectId}"]`).forEach((btn) => {
+          btn.textContent = '★';
+          btn.classList.add('is-favourite');
+          btn.title = 'Remove from favourites';
+        });
+      }
+      await setFavouriteProjects(newFavIds);
     });
   });
 }
@@ -515,15 +656,31 @@ async function openEntryForm(entry = null, defaultDate = null) {
     }
   }
 
-  // Populate project dropdown (already sorted alphabetically)
+  // Populate project dropdown with favourites section
+  const favProjectIds = new Set((await getFavouriteProjects()).map((k) => k.split('::')[0]));
   projectSelect.innerHTML = '<option value="">Select project...</option>';
-  projects.forEach((p) => {
+  const favProjects = projects.filter((p) => favProjectIds.has(p.id));
+  const otherProjects = projects.filter((p) => !favProjectIds.has(p.id));
+  if (favProjects.length > 0) {
+    const favGroup = document.createElement('optgroup');
+    favGroup.label = '★ Favourites';
+    favProjects.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name + (p.clientName ? ` (${p.clientName})` : '');
+      favGroup.appendChild(opt);
+    });
+    projectSelect.appendChild(favGroup);
+  }
+  const allGroup = document.createElement('optgroup');
+  allGroup.label = favProjects.length > 0 ? 'All Projects' : 'Projects';
+  otherProjects.forEach((p) => {
     const opt = document.createElement('option');
     opt.value = p.id;
-    const clientLabel = p.clientName ? ` (${p.clientName})` : '';
-    opt.textContent = p.name + clientLabel;
-    projectSelect.appendChild(opt);
+    opt.textContent = p.name + (p.clientName ? ` (${p.clientName})` : '');
+    allGroup.appendChild(opt);
   });
+  projectSelect.appendChild(allGroup);
 
   // Reset task/role dropdowns
   taskSelect.innerHTML = '<option value="">Select task...</option>';
@@ -535,7 +692,7 @@ async function openEntryForm(entry = null, defaultDate = null) {
     // Fill form with existing entry
     projectSelect.value = entry.project?.id || '';
     entryDate.value = entry.date;
-    entryHours.value = minutesToHours(entry.minutes);
+    entryHours.value = entry.minutes <= 1 ? '' : minutesToHours(entry.minutes);
     entryNotes.value = entry.notes || '';
     // Load tasks & roles for the project
     if (entry.project?.id) {
@@ -561,6 +718,7 @@ async function openEntryForm(entry = null, defaultDate = null) {
 
   showView(entryView);
 }
+
 
 async function loadProjectDetails(projectId) {
   // Fetch tasks from API (project-level)
@@ -747,12 +905,14 @@ async function stopTimer() {
 // --- Event Listeners ---
 
 openLoginBtn.addEventListener('click', () => {
-  const email = setupEmail.value.trim();
-  if (!email) {
-    setStatus(setupStatus, 'Please enter your email first.', 'error');
-    return;
+  if (!reloginMode) {
+    const email = setupEmail.value.trim();
+    if (!email) {
+      setStatus(setupStatus, 'Please enter your email first.', 'error');
+      return;
+    }
+    chrome.storage.local.set({ pendingEmail: email });
   }
-  chrome.storage.local.set({ pendingEmail: email });
   setStatus(setupStatus, 'Opening Ruddr login...', 'success');
   // Restart polling so the timeout resets each time the user tries
   stopLoginPolling();
@@ -765,22 +925,34 @@ settingsBtn.addEventListener('click', () => {
 });
 
 prevDayBtn.addEventListener('click', () => {
-  currentDate = addDays(currentDate, -1);
+  currentDate = addDays(currentDate, -7);
   loadDay();
 });
 
 nextDayBtn.addEventListener('click', () => {
-  currentDate = addDays(currentDate, 1);
-  loadDay();
-});
-
-currentDayLabel.addEventListener('click', () => {
-  currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
+  currentDate = addDays(currentDate, 7);
   loadDay();
 });
 
 addEntryBtn.addEventListener('click', () => openEntryForm());
+
+deleteSelectedBtn.addEventListener('click', async () => {
+  const checked = [...dayContainer.querySelectorAll('.entry-checkbox:checked')];
+  if (checked.length === 0) return;
+  const ids = checked.flatMap((cb) => cb.dataset.entryIds.split(','));
+  const label = `${ids.length} ${ids.length === 1 ? 'entry' : 'entries'}`;
+  if (!confirm(`Delete ${label}?`)) return;
+  deleteSelectedBtn.disabled = true;
+  deleteSelectedBtn.textContent = 'Deleting…';
+  try {
+    await Promise.all(ids.map((id) => deleteTimeEntry(id)));
+    await loadDay();
+  } catch (err) {
+    showToast('Delete failed: ' + err.message);
+    deleteSelectedBtn.disabled = false;
+    deleteSelectedBtn.textContent = 'Delete selected';
+  }
+});
 
 timerStopBtn.addEventListener('click', stopTimer);
 
@@ -934,6 +1106,201 @@ deleteConfirmBtn.addEventListener('click', async () => {
     deleteConfirmBtn.textContent = 'Delete';
   }
 });
+
+
+// --- Copy Over ---
+copyLastWeekBtn.addEventListener('click', () => {
+  copyModal.classList.remove('hidden');
+});
+
+copyCancelBtn.addEventListener('click', () => {
+  copyModal.classList.add('hidden');
+});
+
+copyConfirmBtn.addEventListener('click', async () => {
+  const mode = document.querySelector('input[name="copyMode"]:checked').value;
+  copyConfirmBtn.disabled = true;
+  copyConfirmBtn.textContent = 'Copying…';
+  try {
+    if (mode === 'favourites') {
+      await copyFavourites();
+    } else {
+      await copyFromLastWeek(mode);
+    }
+    copyModal.classList.add('hidden');
+    await loadDay();
+  } catch (err) {
+    showToast('Copy failed: ' + err.message);
+  } finally {
+    copyConfirmBtn.disabled = false;
+    copyConfirmBtn.textContent = 'Copy';
+  }
+});
+
+async function copyFromLastWeek(mode) {
+  const memberId = await getMemberId();
+
+  const lastWeekStart = addDays(getWeekStart(currentDate), -7);
+  const lastWeekEnd = addDays(lastWeekStart, 6);
+  const lastWeekResponse = await listTimeEntries({
+    memberId,
+    dateOnOrAfter: formatDate(lastWeekStart),
+    dateOnOrBefore: formatDate(lastWeekEnd),
+  });
+  const lastWeekEntries = (lastWeekResponse.results || []).filter(
+    (e) => e.date >= formatDate(lastWeekStart) && e.date <= formatDate(lastWeekEnd)
+  );
+
+  if (lastWeekEntries.length === 0) {
+    showToast('No entries found in last week');
+    return;
+  }
+
+  // Fetch current week to avoid duplicates
+  const thisWeekStart = getWeekStart(currentDate);
+  const thisWeekEnd = addDays(thisWeekStart, 6);
+  const thisWeekResponse = await listTimeEntries({
+    memberId,
+    dateOnOrAfter: formatDate(thisWeekStart),
+    dateOnOrBefore: formatDate(thisWeekEnd),
+  });
+  const existingKeys = new Set(
+    (thisWeekResponse.results || []).map((e) => `${e.date}::${e.project?.id || ''}::${e.task?.id || ''}`)
+  );
+
+  const today = formatDate(currentDate);
+  let entriesToCreate;
+
+  if (mode === 'whole-week') {
+    // Copy each entry to the same weekday this week
+    entriesToCreate = lastWeekEntries
+      .map((e) => ({
+        date: formatDate(addDays(new Date(e.date + 'T00:00:00'), 7)),
+        projectId: e.project?.id,
+        taskId: e.task?.id || null,
+        roleId: e.role?.id || null,
+        notes: e.notes || '',
+      }))
+      .filter((e) => e.projectId && !existingKeys.has(`${e.date}::${e.projectId}::${e.taskId || ''}`));
+  } else if (mode === 'today-only') {
+    // Copy last week's same weekday entries to today
+    const lastWeekSameDay = formatDate(addDays(currentDate, -7));
+    const sameDayEntries = lastWeekEntries.filter((e) => e.date === lastWeekSameDay);
+    if (sameDayEntries.length === 0) {
+      showToast('No entries found for last week\'s same day');
+      return;
+    }
+    entriesToCreate = sameDayEntries
+      .map((e) => ({
+        date: today,
+        projectId: e.project?.id,
+        taskId: e.task?.id || null,
+        roleId: e.role?.id || null,
+        notes: e.notes || '',
+      }))
+      .filter((e) => e.projectId && !existingKeys.has(`${today}::${e.projectId}::${e.taskId || ''}`));
+  } else {
+    // all-to-today — unique project+task combos from all last week to today
+    const seen = new Set();
+    entriesToCreate = [];
+    for (const e of lastWeekEntries) {
+      const projectId = e.project?.id;
+      if (!projectId) continue;
+      const taskId = e.task?.id || null;
+      const comboKey = `${projectId}::${taskId || ''}`;
+      if (seen.has(comboKey)) continue;
+      seen.add(comboKey);
+      if (existingKeys.has(`${today}::${projectId}::${taskId || ''}`)) continue;
+      entriesToCreate.push({
+        date: today,
+        projectId,
+        taskId,
+        roleId: e.role?.id || null,
+        notes: e.notes || '',
+      });
+    }
+  }
+
+  if (entriesToCreate.length === 0) {
+    showToast('All entries already exist for this period', 'success');
+    return;
+  }
+
+  let created = 0;
+  let skipped = 0;
+  for (const entry of entriesToCreate) {
+    const data = {
+      typeId: 'project_time',
+      projectId: entry.projectId,
+      date: entry.date,
+      minutes: 1,
+      notes: entry.notes,
+      memberId,
+    };
+    if (entry.taskId) data.taskId = entry.taskId;
+    if (entry.roleId) data.roleId = entry.roleId;
+    try {
+      await createTimeEntry(data);
+      created++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  const skippedMsg = skipped > 0 ? ` (${skipped} skipped — archived task)` : '';
+  showToast(`${created} ${created === 1 ? 'entry' : 'entries'} copied${skippedMsg}`, 'success');
+  trackEvent('copy_over', { mode, count: created });
+}
+
+async function copyFavourites() {
+  const favKeys = await getFavouriteProjects();
+  if (!favKeys || favKeys.length === 0) {
+    showToast('No favourite projects saved');
+    return;
+  }
+  const memberId = await getMemberId();
+  const today = formatDate(currentDate);
+  const todayResponse = await listTimeEntries({ memberId, dateOnOrAfter: today, dateOnOrBefore: today });
+  const existingKeys = new Set(
+    (todayResponse.results || [])
+      .filter((e) => e.date === today)
+      .map((e) => `${e.project?.id}::${e.task?.id || ''}`)
+  );
+  const toCreate = favKeys.filter((key) => {
+    const [projectId, taskId] = key.split('::');
+    return !existingKeys.has(`${projectId}::${taskId}`);
+  });
+  if (toCreate.length === 0) {
+    showToast('All favourites already have entries today', 'success');
+    return;
+  }
+  let created = 0;
+  let skipped = 0;
+  for (const key of toCreate) {
+    const [projectId, taskId, roleId] = key.split('::');
+    const data = { typeId: 'project_time', projectId, date: today, minutes: 1, notes: '', memberId };
+    if (taskId) data.taskId = taskId;
+    if (roleId) data.roleId = roleId;
+    try {
+      await createTimeEntry(data);
+      created++;
+    } catch (err) {
+      if (err.message && err.message.toLowerCase().includes('notes')) {
+        try {
+          await createTimeEntry({ ...data, notes: 'Add notes' });
+          created++;
+        } catch {
+          skipped++;
+        }
+      } else {
+        skipped++;
+      }
+    }
+  }
+  const skippedMsg = skipped > 0 ? ` (${skipped} skipped)` : '';
+  showToast(`${created} ${created === 1 ? 'entry' : 'entries'} added${skippedMsg}`, 'success');
+  trackEvent('copy_favourites', { count: created });
+}
 
 // --- Reload on focus: reset to today, pick up changes from other clients (debounced 30s) ---
 window.addEventListener('focus', () => {

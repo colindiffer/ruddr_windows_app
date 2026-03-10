@@ -197,24 +197,83 @@ body {
 .day-nav {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 6px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
+  gap: 2px;
 }
 
 .nav-arrow {
   font-size: 20px;
   font-weight: 700;
-  padding: 2px 10px;
+  padding: 2px 8px;
+  flex-shrink: 0;
 }
 
-.day-label-btn {
-  font-size: 13px;
-  font-weight: 600;
-  min-width: 120px;
+.day-nav-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.month-year-label {
   text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.03em;
+}
+
+.day-pills {
+  display: flex;
+  justify-content: space-between;
+}
+
+.day-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex: 1;
+}
+
+.day-pill:hover {
+  background: var(--color-accent-light);
+}
+
+.pill-name {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.pill-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.day-pill.today .pill-date {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.day-pill.selected:not(.today) .pill-date {
+  background: var(--color-border);
+  color: var(--color-text);
 }
 
 /* Week bar */
@@ -401,9 +460,81 @@ body {
   font-size: 15px;
 }
 
-.add-btn {
-  padding: 6px 14px;
+.footer-actions button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Project select row with favourite star */
+.entry-checkbox {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-right: 2px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.entry-item:hover .entry-checkbox,
+.entry-item.selected .entry-checkbox,
+.day-entries.has-selection .entry-checkbox {
+  opacity: 1;
+}
+
+.entry-item.selected {
+  background: var(--color-accent-light);
+}
+
+.entry-fav-btn {
+  flex-shrink: 0;
   font-size: 13px;
+  padding: 2px 4px;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.entry-item:hover .entry-fav-btn,
+.entry-fav-btn.is-favourite {
+  opacity: 1;
+}
+
+.entry-fav-btn:hover {
+  color: #f59e0b;
+  background: #fef3c7;
+}
+
+.entry-fav-btn.is-favourite {
+  color: #f59e0b;
+}
+
+/* Copy modal options */
+.copy-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.copy-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.copy-option input[type="radio"] {
+  width: auto;
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 /* Entry form */

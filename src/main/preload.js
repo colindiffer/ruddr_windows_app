@@ -11,6 +11,7 @@ window.electronAPI = {
   setMinimizeToTray: (enabled) => ipcRenderer.invoke('set-minimize-to-tray', enabled),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  updateReminders: () => ipcRenderer.send('update-reminders'),
 };
 
 // Shim for chrome.storage.local

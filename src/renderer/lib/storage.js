@@ -54,6 +54,12 @@ export function setMemberId(id) {
   return chrome.storage.local.set({ memberId: id });
 }
 
+export function getMemberEmail() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('memberEmail', (result) => resolve(result.memberEmail || ''));
+  });
+}
+
 export function getMemberName() {
   return new Promise((resolve) => {
     chrome.storage.local.get('memberName', (result) => resolve(result.memberName || ''));
@@ -111,6 +117,17 @@ export function setTimerState(state) {
 
 export function clearTimerState() {
   return chrome.storage.local.remove('timerState');
+}
+
+// --- Favourite Projects ---
+export function getFavouriteProjects() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('favouriteProjects', (result) => resolve(result.favouriteProjects || []));
+  });
+}
+
+export function setFavouriteProjects(ids) {
+  return chrome.storage.local.set({ favouriteProjects: ids });
 }
 
 // --- Reminder Settings ---
