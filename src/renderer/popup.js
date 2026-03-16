@@ -1507,7 +1507,7 @@ async function copyFromLastWeek(mode) {
       typeId: 'project_time',
       projectId: entry.projectId,
       date: entry.date,
-      minutes: 1,
+      minutes: 0,
       notes: entry.notes,
       memberId,
     };
@@ -1552,7 +1552,7 @@ async function copyFavourites() {
   let skipped = 0;
   for (const key of toCreate) {
     const [projectId, taskId, roleId] = key.split('::');
-    const data = { typeId: 'project_time', projectId, date: today, minutes: 1, notes: '', memberId };
+    const data = { typeId: 'project_time', projectId, date: today, minutes: 0, notes: '', memberId };
     if (taskId) data.taskId = taskId;
     if (roleId) data.roleId = roleId;
     try {
