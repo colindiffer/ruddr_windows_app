@@ -490,11 +490,30 @@ body {
 .entry-month-stat {
   font-size: 10px;
   color: var(--color-text-secondary);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .entry-month-stat.over-stat {
   color: var(--color-error);
+}
+
+.entry-stat-bar {
+  height: 3px;
+  background: var(--color-border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+
+.entry-stat-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.entry-stat-fill.over {
+  background: var(--color-error);
 }
 
 .entry-fav-btn {

@@ -683,19 +683,19 @@ async function loadEntryProjectStats() {
       const loggedH = minutesToHours(loggedMinutes);
       const plannedH = getPlannedHoursForProject(allocations, projectId);
 
-      let content = '';
       if (plannedH > 0) {
-        const pct = Math.round((loggedH / plannedH) * 100);
+        const pct = Math.min(100, Math.round((loggedH / plannedH) * 100));
         const remaining = plannedH - loggedH;
         const over = remaining < 0;
         const remainText = over ? `${fmtHours(-remaining)} over` : `${fmtHours(remaining)} left`;
         el.classList.toggle('over-stat', over);
-        content = `${fmtHours(loggedH)} / ${fmtHours(plannedH)} · ${pct}% · ${remainText}`;
+        el.innerHTML =
+          `<div class="entry-stat-bar"><div class="entry-stat-fill${over ? ' over' : ''}" style="width:${pct}%"></div></div>` +
+          `<span>${fmtHours(loggedH)} / ${fmtHours(plannedH)} · ${pct}% · ${remainText}</span>`;
       } else {
-        content = `${fmtHours(loggedH)} this month`;
+        el.innerHTML = `<span>${fmtHours(loggedH)} this month</span>`;
       }
 
-      el.textContent = content;
       seen[projectId] = el.innerHTML;
     });
   } catch {
