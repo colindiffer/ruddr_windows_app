@@ -5,6 +5,7 @@ const { autoUpdater } = require('electron-updater');
 
 const store = new Store();
 let mainWindow = null;
+let optionsWindow = null;
 let tray = null;
 let isQuitting = false;
 let endOfDayTimer = null;
@@ -114,30 +115,26 @@ function createTray() {
   tray.on('click', () => toggleWindow());
 }
 
+function sendUpdateStatus(status) {
+  for (const win of [mainWindow, optionsWindow]) {
+    if (win && !win.isDestroyed()) win.webContents.send('update-status', status);
+  }
+}
+
 function setupAutoUpdater() {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('update-available', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', 'available');
-    }
-  });
+  autoUpdater.on('update-available', () => sendUpdateStatus('available'));
 
-  autoUpdater.on('update-not-available', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', 'not-available');
-    }
-  });
+  autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'));
 
   autoUpdater.on('update-downloaded', () => {
     tray.setToolTip('Ruddr Time Tracker — Update ready');
     tray.setContextMenu(buildTrayMenu(true));
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', 'downloaded');
-    }
+    sendUpdateStatus('downloaded');
     new Notification({
       title: 'Ruddr Time Tracker',
       body: 'An update has been downloaded. Click "Restart to update" in the tray menu.',
@@ -146,9 +143,7 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (err) => {
     console.error('Auto-updater error:', err.message);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', 'error');
-    }
+    sendUpdateStatus('error');
   });
 
   // Check on startup after a short delay, then every 4 hours
@@ -279,7 +274,11 @@ ipcMain.on('open-external', (event, url) => {
 });
 
 ipcMain.on('open-options', () => {
-  const optionsWin = new BrowserWindow({
+  if (optionsWindow && !optionsWindow.isDestroyed()) {
+    optionsWindow.focus();
+    return;
+  }
+  optionsWindow = new BrowserWindow({
     width: 520,
     height: 600,
     frame: false,
@@ -289,8 +288,8 @@ ipcMain.on('open-options', () => {
       nodeIntegration: false,
     },
   });
-  optionsWin.loadFile(path.join(__dirname, '../renderer/options/options.html'));
-  optionsWin.on('closed', () => showWindow());
+  optionsWindow.loadFile(path.join(__dirname, '../renderer/options/options.html'));
+  optionsWindow.on('closed', () => { optionsWindow = null; showWindow(); });
 });
 
 ipcMain.handle('logout', async () => {
