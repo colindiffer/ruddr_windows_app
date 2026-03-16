@@ -1495,6 +1495,7 @@ async function copyFromLastWeek(mode) {
         taskId: e.task?.id || null,
         roleId: e.role?.id || null,
         notes: e.notes || '',
+        _src: e,
       }))
       .filter((e) => e.projectId && !existingKeys.has(`${e.date}::${e.projectId}::${e.taskId || ''}`));
   } else if (mode === 'today-only') {
@@ -1512,6 +1513,7 @@ async function copyFromLastWeek(mode) {
         taskId: e.task?.id || null,
         roleId: e.role?.id || null,
         notes: e.notes || '',
+        _src: e,
       }))
       .filter((e) => e.projectId && !existingKeys.has(`${today}::${e.projectId}::${e.taskId || ''}`));
   } else {
@@ -1532,6 +1534,7 @@ async function copyFromLastWeek(mode) {
         taskId,
         roleId: e.role?.id || null,
         notes: e.notes || '',
+        _src: e,
       });
     }
   }
@@ -1544,13 +1547,12 @@ async function copyFromLastWeek(mode) {
   // Save as local drafts — no API call until user fills in hours
   const now = Date.now();
   for (const entry of entriesToCreate) {
-    const sourceEntry = lastWeekEntries.find((e) => e.project?.id === entry.projectId && (e.task?.id || null) === entry.taskId);
     await addDraftEntry({
       _isDraft: true,
       _clientId: `draft-${now}-${Math.random().toString(36).slice(2)}`,
       date: entry.date,
-      project: { id: entry.projectId, name: sourceEntry?.project?.name || '' },
-      task: entry.taskId ? { id: entry.taskId, name: sourceEntry?.task?.name || '' } : null,
+      project: { id: entry.projectId, name: entry._src?.project?.name || '' },
+      task: entry.taskId ? { id: entry.taskId, name: entry._src?.task?.name || '' } : null,
       role: entry.roleId ? { id: entry.roleId } : null,
       notes: entry.notes,
       minutes: 0,
@@ -1588,6 +1590,24 @@ async function copyFavourites() {
   if (toCreate.length === 0) {
     showToast('All favourites already have entries today', 'success');
     return;
+  }
+
+  // Ensure projects are loaded so we can look up names
+  if (projects.length === 0) {
+    try {
+      const allProjectMembers = await listProjectMembers();
+      const myMemberships = allProjectMembers.filter(
+        (pm) => pm.member?.id === memberId && pm.isActive !== false
+      );
+      memberProjectMap = {};
+      projects = myMemberships
+        .filter((pm) => pm.project)
+        .map((pm) => {
+          memberProjectMap[pm.project.id] = pm;
+          return { id: pm.project.id, name: pm.project.name, clientName: pm.project.client?.name || '' };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch { /* if it fails, names will be blank but drafts still created */ }
   }
 
   // Save as local drafts — no API call until user fills in hours
