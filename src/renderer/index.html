@@ -71,7 +71,7 @@
 
     <div id="weekBar" class="week-bar">
       <span id="weekStatusBadge" class="week-badge week-badge-none">—</span>
-      <span class="week-hours">Week: <strong id="weekHours">—</strong></span>
+      <span class="week-hours">Week: <strong id="weekHours">—</strong><span id="monthHoursLabel" class="month-hours-label hidden"> · <button id="monthOverviewBtn" class="month-overview-btn">Month: <strong id="monthHours">—</strong></button></span></span>
       <button id="copyLastWeekBtn" class="btn-week-action">Copy Over</button>
     </div>
 
@@ -90,6 +90,16 @@
         <button id="addEntryBtn" class="btn-primary add-btn">+ New Entry</button>
       </div>
     </div>
+
+    <!-- Monthly overview panel -->
+    <div id="monthlyPanel" class="monthly-panel hidden">
+      <div class="monthly-panel-header">
+        <button id="monthlyPanelClose" class="btn-icon">‹ Back</button>
+        <span id="monthlyPanelTitle" class="header-title"></span>
+        <span></span>
+      </div>
+      <div id="monthlyPanelBody" class="monthly-panel-body"></div>
+    </div>
   </div>
 
   <!-- Entry form (add/edit) -->
@@ -106,6 +116,13 @@
         <select id="projectSelect">
           <option value="">Select project...</option>
         </select>
+      </div>
+
+      <div id="projectStats" class="project-stats hidden">
+        <div id="projectStatsBar" class="project-stats-bar hidden">
+          <div id="projectStatsFill" class="project-stats-fill"></div>
+        </div>
+        <div id="projectStatsText" class="project-stats-text"></div>
       </div>
 
       <div class="field-row">

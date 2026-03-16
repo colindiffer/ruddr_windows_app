@@ -75,11 +75,25 @@ document.getElementById('checkUpdatesBtn').addEventListener('click', async () =>
   const status = document.getElementById('updateStatus');
   btn.disabled = true;
   setStatus(status, 'Checking...', '');
-  await window.electronAPI.checkForUpdates();
-  setTimeout(() => {
-    setStatus(status, 'Up to date!', 'success');
+
+  const timeout = setTimeout(() => {
+    setStatus(status, 'Could not check — try again later', 'error');
     btn.disabled = false;
-  }, 3000);
+  }, 15000);
+
+  window.electronAPI.onUpdateStatus((updateStatus) => {
+    clearTimeout(timeout);
+    if (updateStatus === 'not-available') {
+      setStatus(status, 'Up to date!', 'success');
+    } else if (updateStatus === 'available' || updateStatus === 'downloaded') {
+      setStatus(status, 'Update downloading...', 'success');
+    } else if (updateStatus === 'error') {
+      setStatus(status, 'Update check failed', 'error');
+    }
+    btn.disabled = false;
+  });
+
+  await window.electronAPI.checkForUpdates();
 });
 
 // --- Init ---

@@ -120,9 +120,24 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  autoUpdater.on('update-available', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', 'available');
+    }
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', 'not-available');
+    }
+  });
+
   autoUpdater.on('update-downloaded', () => {
     tray.setToolTip('Ruddr Time Tracker — Update ready');
     tray.setContextMenu(buildTrayMenu(true));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', 'downloaded');
+    }
     new Notification({
       title: 'Ruddr Time Tracker',
       body: 'An update has been downloaded. Click "Restart to update" in the tray menu.',
@@ -131,6 +146,9 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (err) => {
     console.error('Auto-updater error:', err.message);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-status', 'error');
+    }
   });
 
   // Check on startup after a short delay, then every 4 hours

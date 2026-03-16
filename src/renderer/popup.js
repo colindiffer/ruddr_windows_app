@@ -1,5 +1,5 @@
 import { getMemberId, setMemberId, getMemberEmail, getLastUsedProjectId, setLastUsedProjectId, getLastUsedTaskId, setLastUsedTaskId, addRecentProject, getTimerState, setTimerState, clearTimerState, getFavouriteProjects, setFavouriteProjects } from './lib/storage.js';
-import { listTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, listProjectMembers, listProjectTasks, listMembers } from './lib/api.js';
+import { listTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, listProjectMembers, listProjectTasks, listMembers, getProject, getProjectMemberForUser, listAllocationsForMember } from './lib/api.js';
 import { trackEvent, trackView } from './lib/analytics.js';
 
 // --- State ---
@@ -16,6 +16,9 @@ let loginPollInterval = null;
 let lastLoadAt = 0; // debounce focus reloads
 let loginPollStartedAt = 0;
 let reloginMode = false; // true when session expired but memberId already known
+let projectHoursCache = {}; // projectId -> { budgetHours, loggedHours } — cleared on month change
+let monthEntriesCache = null; // { key: 'YYYY-MM', entries: [] } — shared between month total and project stats
+let allocationsCache = null; // all allocations for current member, fetched once per session
 
 // --- DOM refs ---
 const setupView = document.getElementById('setupView');
@@ -65,6 +68,17 @@ const copyModal = document.getElementById('copyModal');
 const copyCancelBtn = document.getElementById('copyCancelBtn');
 const copyConfirmBtn = document.getElementById('copyConfirmBtn');
 const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+const projectStats = document.getElementById('projectStats');
+const projectStatsBar = document.getElementById('projectStatsBar');
+const projectStatsFill = document.getElementById('projectStatsFill');
+const projectStatsText = document.getElementById('projectStatsText');
+const monthHoursLabel = document.getElementById('monthHoursLabel');
+const monthHoursEl = document.getElementById('monthHours');
+const monthOverviewBtn = document.getElementById('monthOverviewBtn');
+const monthlyPanel = document.getElementById('monthlyPanel');
+const monthlyPanelTitle = document.getElementById('monthlyPanelTitle');
+const monthlyPanelBody = document.getElementById('monthlyPanelBody');
+const monthlyPanelClose = document.getElementById('monthlyPanelClose');
 
 // --- Helpers ---
 function addDays(d, n) {
@@ -92,6 +106,10 @@ function minutesToHours(min) {
 
 function hoursToMinutes(h) {
   return Math.round(h * 60);
+}
+
+function fmtHours(h) {
+  return (h % 1 === 0 ? h : +h.toFixed(1)) + 'h';
 }
 
 function isToday(d) {
@@ -410,6 +428,200 @@ function renderWeekStatus() {
   }
 }
 
+// --- Shared month entries fetch (cached per month) ---
+async function getMonthEntries() {
+  const key = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+  if (monthEntriesCache && monthEntriesCache.key === key) return monthEntriesCache.entries;
+
+  const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+  const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+  const memberId = await getMemberId();
+  const monthStartStr = formatDate(monthStart);
+  const monthEndStr = formatDate(monthEnd);
+  const response = await listTimeEntries({
+    memberId,
+    dateOnOrAfter: monthStartStr,
+    dateOnOrBefore: monthEndStr,
+    limit: 500,
+  });
+  const entries = (response.results || []).filter((e) => e.date >= monthStartStr && e.date <= monthEndStr);
+  monthEntriesCache = { key, entries };
+  return entries;
+}
+
+async function getAllocations() {
+  if (allocationsCache) return allocationsCache;
+  const memberId = await getMemberId();
+  allocationsCache = await listAllocationsForMember(memberId);
+  return allocationsCache;
+}
+
+function getPlannedHoursForProject(allocations, projectId) {
+  const monthStartStr = formatDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+  const monthEndStr = formatDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0));
+  return allocations
+    .filter((a) => a.project?.id === projectId)
+    .filter((a) => a.start <= monthEndStr && a.end >= monthStartStr)
+    .reduce((s, a) => s + (a.hoursPerMonth || 0), 0);
+}
+
+// --- Month Status ---
+async function loadMonthStatus() {
+  try {
+    const entries = await getMonthEntries();
+    const monthMinutes = entries.reduce((s, e) => s + (e.minutes || 0), 0);
+    monthHoursEl.textContent = fmtHours(minutesToHours(monthMinutes));
+    monthHoursLabel.classList.remove('hidden');
+  } catch {
+    // fail silently
+  }
+}
+
+async function showMonthlyOverview() {
+  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+  monthlyPanelTitle.textContent = monthName;
+  monthlyPanelBody.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>';
+  monthlyPanel.classList.remove('hidden');
+
+  try {
+    const entries = await getMonthEntries();
+
+    // Group by project, exclude Account Development
+    const projectMap = {};
+    for (const e of entries) {
+      if (!e.project) continue;
+      if ((e.task?.name || '').trim().toLowerCase() === 'account development') continue;
+      const pid = e.project.id;
+      if (!projectMap[pid]) {
+        projectMap[pid] = { id: pid, name: e.project.name || '(unknown)', minutes: 0, budgetHours: null };
+      }
+      projectMap[pid].minutes += e.minutes || 0;
+    }
+
+    const projects = Object.values(projectMap).sort((a, b) => b.minutes - a.minutes);
+
+    // Fetch assigned hours (use cache where available)
+    const allocations = await getAllocations().catch(() => []);
+    for (const p of projects) {
+      if (projectHoursCache[p.id]) {
+        p.budgetHours = projectHoursCache[p.id].budgetHours;
+      } else {
+        const planned = getPlannedHoursForProject(allocations, p.id);
+        p.budgetHours = planned > 0 ? planned : null;
+      }
+    }
+
+    const totalMinutes = projects.reduce((s, p) => s + p.minutes, 0);
+    const totalLoggedH = minutesToHours(totalMinutes);
+    const budgetedProjects = projects.filter((p) => p.budgetHours !== null);
+    const totalBudgetH = budgetedProjects.reduce((s, p) => s + p.budgetHours, 0);
+    const totalLoggedBudgetedH = budgetedProjects.reduce((s, p) => s + minutesToHours(p.minutes), 0);
+    const totalRemainingH = totalBudgetH - totalLoggedBudgetedH;
+
+    let html = '';
+
+    // Overall summary card
+    html += '<div class="monthly-overall">';
+    html += '<div class="monthly-overall-label">Total logged</div>';
+    html += `<div class="monthly-overall-hours">${fmtHours(totalLoggedH)}</div>`;
+    if (budgetedProjects.length > 0) {
+      const isOver = totalRemainingH < 0;
+      const pct = Math.min(100, (totalLoggedBudgetedH / totalBudgetH) * 100);
+      html += `<div class="monthly-overall-sub">${isOver ? fmtHours(-totalRemainingH) + ' over budget' : fmtHours(totalRemainingH) + ' remaining'} of ${fmtHours(totalBudgetH)} budgeted</div>`;
+      html += `<div class="monthly-overall-bar"><div class="monthly-overall-bar-fill${isOver ? ' over' : ''}" style="width:${pct}%"></div></div>`;
+    }
+    html += '</div>';
+
+    // Per-project list
+    if (projects.length === 0) {
+      html += '<div class="empty-state">No entries this month</div>';
+    } else {
+      html += '<div class="monthly-section-title">By project</div>';
+      for (const p of projects) {
+        const loggedH = minutesToHours(p.minutes);
+        html += '<div class="monthly-project-item">';
+        html += `<div class="monthly-project-name">${p.name}</div>`;
+        if (p.budgetHours !== null) {
+          const pct = Math.min(100, (loggedH / p.budgetHours) * 100);
+          const over = loggedH > p.budgetHours;
+          const remaining = p.budgetHours - loggedH;
+          html += `<div class="monthly-project-bar"><div class="monthly-project-bar-fill${over ? ' over' : ''}" style="width:${pct}%"></div></div>`;
+          html += `<div class="monthly-project-stats">${fmtHours(loggedH)} of ${fmtHours(p.budgetHours)} budget · <span${over ? ' class="over-text"' : ''}>${over ? fmtHours(-remaining) + ' over' : fmtHours(remaining) + ' left'}</span></div>`;
+        } else {
+          html += `<div class="monthly-project-stats">${fmtHours(loggedH)} logged</div>`;
+        }
+        html += '</div>';
+      }
+    }
+
+    monthlyPanelBody.innerHTML = html;
+  } catch {
+    monthlyPanelBody.innerHTML = '<div class="empty-state">Failed to load overview.</div>';
+  }
+}
+
+// --- Project Hours Stats ---
+async function loadProjectStats(projectId) {
+  if (!projectStats) return;
+
+  if (projectHoursCache[projectId]) {
+    renderProjectStats(projectId, projectHoursCache[projectId]);
+    return;
+  }
+
+  projectStats.classList.remove('hidden');
+  projectStatsBar.classList.add('hidden');
+  projectStatsText.textContent = 'Loading…';
+
+  try {
+    const [allocations, monthEntries] = await Promise.all([
+      getAllocations().catch(() => []),
+      getMonthEntries().catch(() => []),
+    ]);
+
+    const plannedHours = getPlannedHoursForProject(allocations, projectId);
+    const budgetHours = plannedHours > 0 ? plannedHours : null;
+
+    const loggedMinutes = monthEntries
+      .filter((e) => e.project?.id === projectId)
+      .filter((e) => (e.task?.name || '').trim().toLowerCase() !== 'account development')
+      .reduce((s, e) => s + (e.minutes || 0), 0);
+    const loggedHours = minutesToHours(loggedMinutes);
+
+    const stats = { budgetHours, loggedHours };
+    projectHoursCache[projectId] = stats;
+    renderProjectStats(projectId, stats);
+  } catch {
+    projectStats.classList.add('hidden');
+  }
+}
+
+function renderProjectStats(projectId, { budgetHours, loggedHours }) {
+  projectStats.classList.remove('hidden');
+
+  const monthName = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+    .toLocaleString('default', { month: 'long' });
+
+  if (budgetHours) {
+    const remaining = budgetHours - loggedHours;
+    const isOver = remaining < 0;
+    const pct = Math.min(100, Math.round((loggedHours / budgetHours) * 100));
+
+    projectStatsBar.classList.remove('hidden');
+    projectStatsFill.style.width = `${pct}%`;
+    projectStatsFill.className = 'project-stats-fill' + (isOver ? ' over-budget' : '');
+
+    const pctText = `${pct}%`;
+    const remainText = isOver
+      ? `${fmtHours(Math.abs(remaining))} over`
+      : `${fmtHours(remaining)} left`;
+    projectStatsText.textContent = `${monthName} · Logged: ${fmtHours(loggedHours)} · Assigned: ${fmtHours(budgetHours)} · ${pctText} · ${remainText}`;
+  } else {
+    projectStatsBar.classList.add('hidden');
+    projectStatsText.textContent = `${monthName}: ${fmtHours(loggedHours)} logged`;
+  }
+}
+
 // --- Day View ---
 async function loadDay() {
   lastLoadAt = Date.now();
@@ -442,6 +654,53 @@ async function loadDay() {
     dayContainer.innerHTML = `<div class="empty-state">Failed to load entries.<br><small>${err.message}</small></div>`;
   }
   loadWeekStatus(); // non-awaited: updates week bar independently
+  loadMonthStatus(); // non-awaited: updates month total in week bar
+  loadEntryProjectStats(); // non-awaited: updates per-project stats on entry cards
+}
+
+async function loadEntryProjectStats() {
+  try {
+    const [allocations, monthEntries] = await Promise.all([
+      getAllocations().catch(() => []),
+      getMonthEntries().catch(() => []),
+    ]);
+
+    const statEls = dayContainer.querySelectorAll('.entry-month-stat[data-project-id]');
+    const seen = {};
+
+    statEls.forEach((el) => {
+      const projectId = el.dataset.projectId;
+
+      if (seen[projectId]) {
+        el.innerHTML = seen[projectId];
+        return;
+      }
+
+      const loggedMinutes = monthEntries
+        .filter((e) => e.project?.id === projectId)
+        .filter((e) => (e.task?.name || '').trim().toLowerCase() !== 'account development')
+        .reduce((s, e) => s + (e.minutes || 0), 0);
+      const loggedH = minutesToHours(loggedMinutes);
+      const plannedH = getPlannedHoursForProject(allocations, projectId);
+
+      let content = '';
+      if (plannedH > 0) {
+        const pct = Math.round((loggedH / plannedH) * 100);
+        const remaining = plannedH - loggedH;
+        const over = remaining < 0;
+        const remainText = over ? `${fmtHours(-remaining)} over` : `${fmtHours(remaining)} left`;
+        el.classList.toggle('over-stat', over);
+        content = `${fmtHours(loggedH)} / ${fmtHours(plannedH)} · ${pct}% · ${remainText}`;
+      } else {
+        content = `${fmtHours(loggedH)} this month`;
+      }
+
+      el.textContent = content;
+      seen[projectId] = el.innerHTML;
+    });
+  } catch {
+    // fail silently
+  }
 }
 
 function updateDayLabel() {
@@ -532,11 +791,12 @@ async function renderDay() {
     const isFav = favProjectIds.has(g.projectId);
 
     const entryIds = g.entries.map((e) => e.id).join(',');
-    html += `<div class="entry-item" data-id="${firstEntry.id}" data-entry-ids="${entryIds}">
+    html += `<div class="entry-item" data-id="${firstEntry.id}" data-entry-ids="${entryIds}" data-project-id="${g.projectId}">
       <input type="checkbox" class="entry-checkbox" data-entry-ids="${entryIds}">
       <div class="entry-info">
         <div class="entry-project">${escapeHtml(g.projectName)}</div>
         ${detail ? `<div class="entry-detail">${escapeHtml(detail)}</div>` : ''}
+        <div class="entry-month-stat" data-project-id="${g.projectId}"></div>
       </div>
       <span class="entry-hours">${g.totalMinutes <= 1 ? '—' : `${minutesToHours(g.totalMinutes)}h`}</span>
       <button class="entry-fav-btn${isFav ? ' is-favourite' : ''}" data-project-id="${g.projectId}" data-task-id="${g.taskId || ''}" data-role-id="${g.roleId || ''}" title="${isFav ? 'Remove from favourites' : 'Add to favourites'}">${isFav ? '★' : '☆'}</button>
@@ -682,11 +942,12 @@ async function openEntryForm(entry = null, defaultDate = null) {
   });
   projectSelect.appendChild(allGroup);
 
-  // Reset task/role dropdowns
+  // Reset task/role dropdowns and project stats
   taskSelect.innerHTML = '<option value="">Select task...</option>';
   taskSelect.disabled = true;
   roleSelect.innerHTML = '<option value="">Select role...</option>';
   roleSelect.disabled = true;
+  projectStats.classList.add('hidden');
 
   if (entry) {
     // Fill form with existing entry
@@ -761,6 +1022,8 @@ async function loadProjectDetails(projectId) {
     roleSelect.appendChild(opt);
   });
   roleSelect.disabled = roles.length === 0;
+
+  loadProjectStats(projectId); // non-awaited: updates project hours bar
 }
 
 // --- Start Timer on Existing Entry (from weekly view) ---
@@ -925,12 +1188,16 @@ settingsBtn.addEventListener('click', () => {
 });
 
 prevDayBtn.addEventListener('click', () => {
+  const prevMonth = currentDate.getMonth();
   currentDate = addDays(currentDate, -7);
+  if (currentDate.getMonth() !== prevMonth) { projectHoursCache = {}; monthEntriesCache = null; }
   loadDay();
 });
 
 nextDayBtn.addEventListener('click', () => {
+  const prevMonth = currentDate.getMonth();
   currentDate = addDays(currentDate, 7);
+  if (currentDate.getMonth() !== prevMonth) { projectHoursCache = {}; monthEntriesCache = null; }
   loadDay();
 });
 
@@ -1002,6 +1269,7 @@ projectSelect.addEventListener('change', async () => {
     taskSelect.disabled = true;
     roleSelect.innerHTML = '<option value="">Select role...</option>';
     roleSelect.disabled = true;
+    projectStats.classList.add('hidden');
   }
 });
 
@@ -1111,6 +1379,12 @@ deleteConfirmBtn.addEventListener('click', async () => {
 // --- Copy Over ---
 copyLastWeekBtn.addEventListener('click', () => {
   copyModal.classList.remove('hidden');
+});
+
+monthOverviewBtn.addEventListener('click', () => showMonthlyOverview());
+
+monthlyPanelClose.addEventListener('click', () => {
+  monthlyPanel.classList.add('hidden');
 });
 
 copyCancelBtn.addEventListener('click', () => {

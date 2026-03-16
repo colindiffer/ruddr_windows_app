@@ -39,13 +39,40 @@ export async function ruddrFetch(endpoint, options = {}) {
   return response.json();
 }
 
-export async function listTimeEntries({ memberId, dateOnOrAfter, dateOnOrBefore }) {
+export async function listTimeEntries({ memberId, dateOnOrAfter, dateOnOrBefore, projectId, limit = 100 }) {
   const params = new URLSearchParams();
   if (memberId) params.set('memberId', memberId);
   if (dateOnOrAfter) params.set('dateOnOrAfter', dateOnOrAfter);
   if (dateOnOrBefore) params.set('dateOnOrBefore', dateOnOrBefore);
-  params.set('limit', '100');
+  if (projectId) params.set('projectId', projectId);
+  params.set('limit', String(limit));
   return ruddrFetch(`/time-entries?${params.toString()}`);
+}
+
+export async function getProject(id) {
+  return ruddrFetch(`/projects/${id}`);
+}
+
+export async function getProjectMemberForUser(projectId, memberId) {
+  return ruddrFetch(`/project-members?projectId=${projectId}&memberId=${memberId}&limit=1`);
+}
+
+export async function listAllocationsForMember(memberId) {
+  const results = [];
+  let startingAfter = null;
+  do {
+    const params = new URLSearchParams({ memberId, limit: '200' });
+    if (startingAfter) params.set('startingAfter', startingAfter);
+    const response = await ruddrFetch(`/allocations?${params.toString()}`);
+    const items = response.results || [];
+    results.push(...items);
+    if (response.hasMore && items.length > 0) {
+      startingAfter = items[items.length - 1].id;
+    } else {
+      startingAfter = null;
+    }
+  } while (startingAfter);
+  return results;
 }
 
 export async function createTimeEntry(data) {
