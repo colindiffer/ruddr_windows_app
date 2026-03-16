@@ -130,6 +130,28 @@ export function setFavouriteProjects(ids) {
   return chrome.storage.local.set({ favouriteProjects: ids });
 }
 
+// --- Draft Entries ---
+export function getDraftEntries() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('draftEntries', (result) => resolve(result.draftEntries || []));
+  });
+}
+
+export function saveDraftEntries(drafts) {
+  return chrome.storage.local.set({ draftEntries: drafts });
+}
+
+export async function addDraftEntry(draft) {
+  const drafts = await getDraftEntries();
+  drafts.push(draft);
+  return saveDraftEntries(drafts);
+}
+
+export async function removeDraftEntry(clientId) {
+  const drafts = await getDraftEntries();
+  return saveDraftEntries(drafts.filter((d) => d._clientId !== clientId));
+}
+
 // --- Reminder Settings ---
 const DEFAULT_REMINDER_SETTINGS = {
   endOfDay: true,
