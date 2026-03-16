@@ -1,6 +1,6 @@
 {
   "name": "ruddr-windows-app",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "Ruddr Time Tracker Windows App",
   "main": "src/main/main.js",
   "scripts": {

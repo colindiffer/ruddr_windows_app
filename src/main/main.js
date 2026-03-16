@@ -350,7 +350,7 @@ ipcMain.on('window-minimize', (event) => {
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 ipcMain.handle('check-for-updates', () => {
-  if (app.isPackaged) autoUpdater.checkForUpdates();
+  if (app.isPackaged) autoUpdater.checkForUpdates().catch(() => sendUpdateStatus('error'));
 });
 
 ipcMain.on('update-reminders', () => {
