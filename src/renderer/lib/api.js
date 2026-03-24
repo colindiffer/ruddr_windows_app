@@ -103,7 +103,7 @@ export async function listProjects() {
   const results = [];
   let startingAfter = null;
   do {
-    const params = new URLSearchParams({ limit: '100' });
+    const params = new URLSearchParams({ limit: '100', recordStatusId: 'active' });
     if (startingAfter) params.set('startingAfter', startingAfter);
     const response = await ruddrFetch(`/projects?${params.toString()}`);
     const items = response.results || [];
@@ -114,15 +114,19 @@ export async function listProjects() {
       startingAfter = null;
     }
   } while (startingAfter);
-  return results;
+  return results.filter((p) => p.recordStatusId !== 'archived');
 }
 
 export async function listProjectTasks(projectId) {
-  return ruddrFetch(`/project-tasks?projectId=${projectId}&limit=100`);
+  const response = await ruddrFetch(`/project-tasks?projectId=${projectId}&limit=100`);
+  response.results = (response.results || []).filter(t => t.isActive !== false);
+  return response;
 }
 
 export async function listProjectRoles(projectId) {
-  return ruddrFetch(`/project-roles?projectId=${projectId}&limit=100`);
+  const response = await ruddrFetch(`/project-roles?projectId=${projectId}&limit=100`);
+  response.results = (response.results || []).filter(r => r.isActive !== false);
+  return response;
 }
 
 export async function listProjectMembers() {

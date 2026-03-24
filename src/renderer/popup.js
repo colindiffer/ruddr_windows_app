@@ -1,5 +1,5 @@
 import { getMemberId, setMemberId, getMemberEmail, getLastUsedProjectId, setLastUsedProjectId, getLastUsedTaskId, setLastUsedTaskId, addRecentProject, getTimerState, setTimerState, clearTimerState, getFavouriteProjects, setFavouriteProjects, getDraftEntries, saveDraftEntries, addDraftEntry, removeDraftEntry } from './lib/storage.js';
-import { listTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, listProjectMembers, listProjectTasks, listMembers, getProject, getProjectMemberForUser, listAllocationsForMember } from './lib/api.js';
+import { listTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, listProjectMembers, listProjects, listProjectTasks, listMembers, getProject, getProjectMemberForUser, listAllocationsForMember } from './lib/api.js';
 import { trackEvent, trackView } from './lib/analytics.js';
 
 // --- State ---
@@ -910,10 +910,14 @@ async function openEntryForm(entry = null, defaultDate = null) {
     try {
       projectSelect.innerHTML = '<option value="">Loading projects...</option>';
       const memberId = await getMemberId();
-      const allProjectMembers = await listProjectMembers();
-      // Filter to current member's active project assignments
+      const [allProjectMembers, activeProjects] = await Promise.all([
+        listProjectMembers(),
+        listProjects(),
+      ]);
+      const activeProjectIds = new Set(activeProjects.map((p) => p.id));
+      // Filter to current member's active project assignments on non-archived projects
       const myMemberships = allProjectMembers.filter(
-        (pm) => pm.member?.id === memberId && pm.isActive !== false
+        (pm) => pm.member?.id === memberId && pm.isActive !== false && activeProjectIds.has(pm.project?.id)
       );
       // Build project list and membership map
       memberProjectMap = {};
